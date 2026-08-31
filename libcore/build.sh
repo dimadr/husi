@@ -219,7 +219,7 @@ apply_windows_toolchain_env() {
         ;;
     esac
 
-    if [ "$host_platform" == "windows" ]; then
+    if [ "$host_platform" == "windows" ] && command -v gcc >/dev/null 2>&1; then
         return
     fi
 

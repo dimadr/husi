@@ -10,12 +10,17 @@ android {
     defaultConfig {
         splits.abi {
             reset()
-            include(
-                "arm64-v8a",
-                "armeabi-v7a",
-                "x86_64",
-                "x86",
-            )
+            val targetAbi = requireTargetAbi()
+            if (targetAbi.isNotBlank()) {
+                include(targetAbi)
+            } else {
+                include(
+                    "arm64-v8a",
+                    "armeabi-v7a",
+                    "x86_64",
+                    "x86",
+                )
+            }
         }
         ndkVersion = "29.0.14206865"
     }

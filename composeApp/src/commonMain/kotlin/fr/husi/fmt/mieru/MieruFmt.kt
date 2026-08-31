@@ -27,6 +27,16 @@ import fr.husi.libcore.Libcore
 import fr.husi.logLevelString
 
 fun MieruBean.buildMieruConfig(port: Int, logLevel: Int): String {
+    val remotePort = parseMieruPort(portRange.ifBlank { finalPort.toString() })
+    val portBinding = mutableMapOf<String, Any>(
+        "protocol" to protocol.uppercase(),
+    ).apply {
+        if (remotePort.isRange) {
+            put("portRange", remotePort.toString())
+        } else {
+            put("port", remotePort.start)
+        }
+    }
     val profile = mutableMapOf(
         "profileName" to "default",
         "user" to mapOf(
@@ -38,10 +48,7 @@ fun MieruBean.buildMieruConfig(port: Int, logLevel: Int): String {
         "servers" to listOf(
             mutableMapOf<String, Any>(
                 "portBindings" to listOf(
-                    mapOf(
-                        "port" to finalPort,
-                        "protocol" to protocol.uppercase(),
-                    ),
+                    portBinding,
                 ),
             ).also {
                 // mieru refuses to parse a domain name in the ipAddress field.
@@ -86,7 +93,14 @@ fun parseMieru(link: String): MieruBean = MieruBean().apply {
     username = url.username
     password = url.password
     serverAddress = url.host
-    serverPort = url.ports.toIntOrNull() ?: defaultPort
+    val remotePort = parseMieruPort(
+        url.queryParameterNotBlank("port") ?: url.ports.ifBlank { defaultPort.toString() },
+    )
+    serverPort = remotePort.start
+    portRange = remotePort.toString().takeIf { remotePort.isRange }.orEmpty()
+    protocol = url.queryParameterNotBlank("protocol")?.uppercase()?.takeIf {
+        it == MieruBean.PROTOCOL_TCP || it == MieruBean.PROTOCOL_UDP
+    } ?: MieruBean.PROTOCOL_TCP
 
     name = url.queryParameter("profile")
     mtu = url.queryParameterNotBlank("mtu")?.toIntOrNull() ?: 0
@@ -100,11 +114,10 @@ fun MieruBean.toUri(): String = Libcore.newURL("mierus").apply {
     username = this@toUri.username
     password = this@toUri.password
     host = serverAddress
-    ports = serverPort.toString()
+    addQueryParameter("port", portRange.ifBlank { serverPort.toString() })
+    addQueryParameter("protocol", protocol.uppercase())
 
-    name.takeIf { it.isNotBlank() }?.let {
-        addQueryParameter("profile", it)
-    }
+    addQueryParameter("profile", name.ifBlank { "default" })
     mtu.takeIf { it > 0 }?.let {
         addQueryParameter("mtu", it.toString())
     }

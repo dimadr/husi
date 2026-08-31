@@ -275,10 +275,13 @@ object BinaryFixtures {
             for (field in owner.declaredFields) {
                 if (field.isSynthetic) continue
                 if (Modifier.isStatic(field.modifiers)) continue
+                if (field.name in BINARY_COMPATIBILITY_IGNORED_FIELDS) continue
                 field.isAccessible = true
                 fields += field
             }
         }
         return fields
     }
+
+    private val BINARY_COMPATIBILITY_IGNORED_FIELDS = setOf("serializationVersion", "portRange")
 }

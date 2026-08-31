@@ -79,6 +79,12 @@ fun Project.requireLocalProperty(key: String): Provider<String> =
     localProperties().map { properties -> properties.getProperty(key) }.orElse("")
 
 fun Project.requireTargetAbi(): String {
+    providers.environmentVariable("HUSI_ABI").orNull?.trim()?.takeIf { it.isNotEmpty() }?.let {
+        require(it in setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")) {
+            "Unsupported HUSI_ABI '$it'."
+        }
+        return it
+    }
     var targetAbi = ""
     if (gradle.startParameter.taskNames.isNotEmpty()) {
         if (gradle.startParameter.taskNames.size == 1) {
@@ -274,6 +280,37 @@ fun Project.setupApp() {
 
         sourceSets.getByName("main").apply {
             jniLibs.directories.add(rootProject.file("composeApp/executableSo").toString())
+        }
+    }
+
+    val embeddedMieru = tasks.register<Exec>("buildEmbeddedMieruArm64") {
+        val runScript = rootProject.file("run")
+        if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+            val bashExecutable = providers.environmentVariable("BASH").orNull
+                ?: File(System.getenv("ProgramFiles").orEmpty())
+                    .resolve("Git/bin/bash.exe")
+                    .takeIf { it.isFile }
+                    ?.absolutePath
+                ?: error("Git Bash was not found. Set BASH to bash.exe before building.")
+            executable(bashExecutable)
+            args(runScript, "app", "mieru", "arm64-v8a")
+        } else {
+            executable(runScript)
+            args("app", "mieru", "arm64-v8a")
+        }
+        workingDir(rootProject.projectDir)
+        inputs.files(
+            rootProject.fileTree("plugin/mieru/src/main/go/mieru").apply {
+                include("**/*.go", "go.mod", "go.sum")
+            },
+            rootProject.file("buildScript/app/mieru.sh"),
+            rootProject.file("buildScript/plugin/common.sh"),
+        )
+        outputs.file(rootProject.file("composeApp/executableSo/arm64-v8a/libmieru.so"))
+    }
+    tasks.configureEach {
+        if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
+            dependsOn(embeddedMieru)
         }
     }
 }
