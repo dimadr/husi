@@ -21,6 +21,8 @@ import java.util.Locale
 import java.util.Properties
 import kotlin.system.exitProcess
 
+private val APPLICATION_ID_PATTERN = Regex("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+")
+
 private val Project.android: CommonExtension
     get() = extensions.getByName("android") as CommonExtension
 
@@ -171,7 +173,11 @@ fun Project.setupAppCommon() {
     val pwd = requireLocalProperty("ALIAS_PASS").orNull?.ifBlank { null }
         ?: providers.environmentVariable("ALIAS_PASS").orNull
 
-    val keystoreFile = rootProject.file("release.keystore")
+    val keystoreFile = providers.environmentVariable("HUSI_KEYSTORE_FILE").orNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let(rootProject::file)
+        ?: rootProject.file("release.keystore")
 
     androidApp.apply {
         if (keystorePwd != null) {
@@ -223,9 +229,7 @@ fun Project.setupAppCommon() {
         buildTypes {
             val key = signingConfigs.findByName("release")
             if (key != null) {
-                if (requireTargetAbi().isBlank()) {
-                    getByName("release").signingConfig = key
-                }
+                getByName("release").signingConfig = key
                 getByName("debug").signingConfig = key
             }
         }
@@ -233,7 +237,13 @@ fun Project.setupAppCommon() {
 }
 
 fun Project.setupApp() {
-    val pkgName = requireMetadata("PACKAGE_NAME").get()
+    val pkgName = providers.environmentVariable("HUSI_APPLICATION_ID").orNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: requireMetadata("PACKAGE_NAME").get()
+    require(APPLICATION_ID_PATTERN.matches(pkgName)) {
+        "Invalid Android application ID '$pkgName'."
+    }
     val verName = requireMetadata("VERSION_NAME").get()
     val verCode = requireMetadata("VERSION_CODE").get().toInt()
     androidApp.apply {
