@@ -26,7 +26,7 @@ LAUNCHER_ZIG_TARGET_ARG = $(if $(LAUNCHER_ZIG_TARGET),-Dtarget=$(LAUNCHER_ZIG_TA
 # never gets to split it — commas have to become spaces here instead.
 COMMA = ,
 
-.PHONY: libcore_android core_desktop core_desktop_common aboutlibraries aboutlibraries_go aboutlibraries_android aboutlibraries_desktop apk apk_debug assets icon desktop desktop_release desktop_package desktop_package_linux desktop_package_linux_all desktop_package_macos desktop_package_windows desktop_package_windows_jbr desktop_package_windows_all desktop_uberjar launcher lint_go lint_android proto proto_install test_go test_zig plugin generate_option lint_go_linux lint_go_android lint_go_windows lint_go_install fmt_go fmt_go_install
+.PHONY: libcore_android core_desktop core_desktop_common aboutlibraries aboutlibraries_go aboutlibraries_android aboutlibraries_desktop apk apk_debug apk_mieru_debug assets icon desktop desktop_release desktop_package desktop_package_linux desktop_package_linux_all desktop_package_macos desktop_package_windows desktop_package_windows_jbr desktop_package_windows_all desktop_uberjar launcher lint_go lint_android proto proto_install test_go test_zig plugin generate_option lint_go_linux lint_go_android lint_go_windows lint_go_install fmt_go fmt_go_install
 
 build: libcore_android assets apk
 
@@ -138,6 +138,9 @@ apk:
 
 apk_debug:
 	BUILD_PLUGIN=none ./gradlew androidApp:assembleFossDebug
+
+apk_mieru_debug:
+	HUSI_ABI=arm64-v8a BUILD_PLUGIN=none ./gradlew androidApp:assembleFossDebug
 
 assets:
 	./run lib assets

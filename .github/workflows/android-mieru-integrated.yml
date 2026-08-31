@@ -1,0 +1,79 @@
+name: Android Mieru Integrated
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/load-build-versions
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            libcore/go.sum
+            plugin/mieru/src/main/go/mieru/go.sum
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
+      - uses: ./.github/actions/gradle-cache
+        with:
+          build-cache-name: android-mieru-integrated
+      - name: Verify Mieru source version
+        run: |
+          test "$(git -C plugin/mieru/src/main/go/mieru rev-parse HEAD)" = "155ebbd60f86e472586a60d7ffe58ec8f8682cb1"
+          grep -Fx 'MIERU_VERSION_NAME=3.36.0-0' husi.properties
+          grep -Fx 'MIERU_VERSION=45' husi.properties
+      - name: Cache route assets
+        id: cache-assets
+        uses: actions/cache@v6
+        with:
+          path: composeApp/src/commonMain/composeResources/files/sing-box
+          key: >-
+            assets-v2-${{ env.GEOIP_VERSION }}-${{ env.GEOSITE_VERSION }}-${{ hashFiles('buildScript/lib/assets.sh', 'libcore/cmd/ruleset_generate/**', 'libcore/cmd/internal/shared/**', 'libcore/go.mod', 'libcore/go.sum') }}
+      - name: Prepare assets
+        if: steps.cache-assets.outputs.cache-hit != 'true'
+        run: make assets
+      - name: Build Android libcore
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: make libcore_android
+      - name: Build ARM64 debug APK with embedded Mieru
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: make apk_mieru_debug
+      - name: Verify and stage the single APK
+        id: apk
+        run: |
+          mapfile -t apks < <(find androidApp/build/outputs/apk/foss/debug -type f -name '*.apk')
+          test "${#apks[@]}" -eq 1
+          apk="${apks[0]}"
+          [[ "$apk" == *arm64-v8a*.apk ]]
+          unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libmieru.so'
+          ! unzip -Z1 "$apk" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
+          mkdir -p artifact
+          cp "$apk" artifact/husi-mieru-3.36.0-arm64-v8a-debug.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: husi-mieru-integrated-arm64
+          path: artifact/husi-mieru-3.36.0-arm64-v8a-debug.apk
+          if-no-files-found: error
