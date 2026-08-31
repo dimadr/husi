@@ -35,6 +35,7 @@ import kotlinx.serialization.json.putJsonObject
 
 fun MieruBean.buildMieruConfig(port: Int, logLevel: Int): String {
     if (password.isEmpty()) error("mieru password is empty")
+    val remotePort = parseMieruPort(portRange.ifBlank { finalPort.toString() })
     val profile = buildJsonObject {
         put("profileName", "default")
         putJsonObject("user") {
@@ -45,7 +46,11 @@ fun MieruBean.buildMieruConfig(port: Int, logLevel: Int): String {
             addJsonObject {
                 putJsonArray("portBindings") {
                     addJsonObject {
-                        put("port", finalPort)
+                        if (remotePort.isRange) {
+                            put("portRange", remotePort.toString())
+                        } else {
+                            put("port", remotePort.start)
+                        }
                         put("protocol", protocol.uppercase())
                     }
                 }
@@ -99,7 +104,14 @@ fun parseMieru(link: String): MieruBean = MieruBean().apply {
     username = url.username
     password = url.password
     serverAddress = url.host
-    serverPort = url.ports.toIntOrNull() ?: defaultPort
+    val remotePort = parseMieruPort(
+        url.queryParameterNotBlank("port") ?: url.ports.ifBlank { defaultPort.toString() },
+    )
+    serverPort = remotePort.start
+    portRange = remotePort.toString().takeIf { remotePort.isRange }.orEmpty()
+    protocol = url.queryParameterNotBlank("protocol")?.uppercase()?.takeIf {
+        it == MieruBean.PROTOCOL_TCP || it == MieruBean.PROTOCOL_UDP
+    } ?: MieruBean.PROTOCOL_TCP
 
     name = url.queryParameter("profile")
     mtu = url.queryParameterNotBlank("mtu")?.toIntOrNull() ?: 0
@@ -113,11 +125,10 @@ fun MieruBean.toUri(): String = Libcore.newURL("mierus").apply {
     username = this@toUri.username
     password = this@toUri.password
     host = serverAddress
-    ports = serverPort.toString()
+    addQueryParameter("port", portRange.ifBlank { serverPort.toString() })
+    addQueryParameter("protocol", protocol.uppercase())
 
-    name.takeIf { it.isNotBlank() }?.let {
-        addQueryParameter("profile", it)
-    }
+    addQueryParameter("profile", name.ifBlank { "default" })
     mtu.takeIf { it > 0 }?.let {
         addQueryParameter("mtu", it.toString())
     }

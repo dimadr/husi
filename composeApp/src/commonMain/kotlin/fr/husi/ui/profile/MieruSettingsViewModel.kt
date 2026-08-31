@@ -3,6 +3,7 @@ package fr.husi.ui.profile
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import fr.husi.fmt.mieru.MieruBean
+import fr.husi.fmt.mieru.parseMieruPort
 import fr.husi.ktx.applyDefaultValues
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +15,7 @@ internal data class MieruUiState(
     override val customOutbound: String = "",
     val name: String = "",
     val address: String = "127.0.0.1",
-    val port: Int = 443,
+    val port: String = "443",
     val protocol: String = "TCP",
     val username: String = "",
     val password: String = "",
@@ -37,7 +38,7 @@ internal class MieruSettingsViewModel : ProfileEditorViewModel<MieruBean>() {
                 customOutbound = customOutboundJson,
                 name = name,
                 address = serverAddress,
-                port = serverPort,
+                port = portRange.ifBlank { serverPort.toString() },
                 protocol = protocol,
                 username = username,
                 password = password,
@@ -54,7 +55,9 @@ internal class MieruSettingsViewModel : ProfileEditorViewModel<MieruBean>() {
         customOutboundJson = state.customOutbound
         name = state.name
         serverAddress = state.address
-        serverPort = state.port
+        val remotePort = parseMieruPort(state.port)
+        serverPort = remotePort.start
+        portRange = remotePort.toString().takeIf { remotePort.isRange }.orEmpty()
         protocol = state.protocol
         username = state.username
         password = state.password
@@ -83,7 +86,7 @@ internal class MieruSettingsViewModel : ProfileEditorViewModel<MieruBean>() {
         uiState.update { it.copy(address = address) }
     }
 
-    fun setPort(port: Int) {
+    fun setPort(port: String) {
         uiState.update { it.copy(port = port) }
     }
 
