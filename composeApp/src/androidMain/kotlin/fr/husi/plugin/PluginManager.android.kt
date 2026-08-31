@@ -24,6 +24,14 @@ actual object PluginManager {
     }
 
     private fun initNative(pluginId: String): PluginInitResult? {
+        if (pluginId == "mieru-plugin") {
+            try {
+                initNativeInternal(pluginId)?.let { return PluginInitResult(it) }
+            } catch (t: Throwable) {
+                Logs.w("initNativeInternal failed", t)
+            }
+        }
+
         val info = Plugins.getPlugin(pluginId) ?: return null
 
         // internal so
