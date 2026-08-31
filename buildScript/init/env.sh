@@ -5,6 +5,10 @@ source buildScript/init/env_ndk.sh
 if [[ "$OSTYPE" =~ ^darwin ]]; then
   export SRC_ROOT="$PWD"
   _NDK_HOST="darwin-x86_64"
+elif [[ "$OSTYPE" =~ ^(msys|cygwin) ]]; then
+  SRC_ROOT="$(realpath .)"
+  export SRC_ROOT
+  _NDK_HOST="windows-x86_64"
 else
   SRC_ROOT="$(realpath .)"
   export SRC_ROOT

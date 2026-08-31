@@ -15,7 +15,7 @@ source "buildScript/init/env.sh"
 
 ALL_ABIS=(armeabi-v7a arm64-v8a x86 x86_64)
 
-JNI_ROOT="$SRC_ROOT/plugin/$PLUGIN/src/main/jniLibs"
+JNI_ROOT="${JNI_ROOT:-$SRC_ROOT/plugin/$PLUGIN/src/main/jniLibs}"
 LIB_OUTPUT="lib$PLUGIN.so"
 
 go_env() {
