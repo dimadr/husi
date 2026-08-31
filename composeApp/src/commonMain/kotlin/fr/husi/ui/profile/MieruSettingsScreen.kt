@@ -12,9 +12,12 @@ import fr.husi.compose.PasswordPreference
 import fr.husi.compose.PreferenceCategory
 import fr.husi.compose.TextFieldPreference
 import fr.husi.compose.UIntegerTextField
+import fr.husi.compose.ValidatedTextField
 import fr.husi.compose.material3.Text
 import fr.husi.compose.preferenceGroup
 import fr.husi.fmt.mieru.MieruBean
+import fr.husi.fmt.mieru.normalizeMieruPort
+import fr.husi.fmt.mieru.validateMieruPort
 import fr.husi.ktx.contentOrUnset
 import fr.husi.ktx.intListN
 import fr.husi.resources.Res
@@ -115,7 +118,7 @@ private fun LazyListScope.mieruSettings(
             value = uiState.port,
             onValueChange = { viewModel.setPort(it) },
             title = { Text(stringResource(Res.string.server_port)) },
-            textToValue = { it.toIntOrNull() ?: 443 },
+            textToValue = { normalizeMieruPort(it) },
             icon = {
                 MaskedIcon(
                     Res.drawable.directions_boat,
@@ -123,9 +126,14 @@ private fun LazyListScope.mieruSettings(
                 )
             },
             summary = { Text(contentOrUnset(uiState.port)) },
-            valueToText = { it.toString() },
+            valueToText = { it },
             textField = { value, onValueChange, onOk ->
-                UIntegerTextField(value, onValueChange, onOk)
+                ValidatedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    onOk = onOk,
+                    validator = ::validateMieruPort,
+                )
             },
         )
         ListPreference(

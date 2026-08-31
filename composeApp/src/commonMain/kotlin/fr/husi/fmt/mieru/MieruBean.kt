@@ -5,11 +5,14 @@ import fr.husi.fmt.AbstractBean
 import fr.husi.fmt.BeanConverters
 import fr.husi.io.BinaryInput
 import fr.husi.io.BinaryOutput
+import kotlinx.serialization.Transient
 
 @KxsSerializable
 class MieruBean : AbstractBean() {
 
     companion object {
+        private const val SERIALIZATION_VERSION = 3
+
         const val PROTOCOL_TCP = "TCP"
         const val PROTOCOL_UDP = "UDP"
 
@@ -30,16 +33,27 @@ class MieruBean : AbstractBean() {
     var password: String = ""
     var mtu: Int = 1400
     var trafficPattern: String = ""
+    var portRange: String = ""
+
+    @Transient
+    private var serializationVersion: Int = SERIALIZATION_VERSION
 
     override val canSelfProtect get() = true
 
     override fun initializeDefaultValues() {
         super.initializeDefaultValues()
         if (protocol.isEmpty()) protocol = PROTOCOL_TCP
+        normalizeMieruPort(portRange)?.let {
+            val port = parseMieruPort(it)
+            portRange = it.takeIf { port.isRange }.orEmpty()
+            serverPort = port.start
+            finalPort = port.start
+        }
     }
 
     override fun serialize(output: BinaryOutput) {
-        output.writeInt(2)
+        val version = if (portRange.isNotEmpty()) SERIALIZATION_VERSION else serializationVersion
+        output.writeInt(version)
         super.serialize(output)
         output.writeString(protocol)
         output.writeString(username)
@@ -48,10 +62,14 @@ class MieruBean : AbstractBean() {
             output.writeInt(mtu)
         }
         output.writeString(trafficPattern)
+        if (version >= 3) {
+            output.writeString(portRange)
+        }
     }
 
     override fun deserialize(input: BinaryInput) {
         val version = input.readInt()
+        serializationVersion = version
         super.deserialize(input)
         protocol = input.readString().uppercase()
         username = input.readString()
@@ -61,6 +79,9 @@ class MieruBean : AbstractBean() {
         }
         if (version >= 2) {
             trafficPattern = input.readString()
+        }
+        if (version >= 3) {
+            portRange = input.readString()
         }
     }
 
