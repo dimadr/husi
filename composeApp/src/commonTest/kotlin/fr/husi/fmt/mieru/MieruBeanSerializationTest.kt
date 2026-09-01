@@ -26,27 +26,53 @@ class MieruBeanSerializationTest {
     }
 
     @Test
-    fun `version 3 round trip and clone preserve port range`() {
-        val source = MieruBean().apply {
-            serverAddress = "example.com"
-            serverPort = 4012
-            portRange = "4012-4021"
-            protocol = MieruBean.PROTOCOL_UDP
-            username = "user"
-            password = "pass"
-            mtu = 1400
-        }
-
-        val restored = BeanConverters.deserialize(
-            MieruBean(),
-            BeanConverters.serialize(source),
+    fun `version 3 round trip preserves all protocols`() {
+        val protocols = listOf(
+            MieruBean.PROTOCOL_TCP,
+            MieruBean.PROTOCOL_UDP,
+            MieruBean.PROTOCOL_TCP_UDP,
         )
-        val cloned = source.clone()
 
-        assertEquals(4012, restored.serverPort)
-        assertEquals("4012-4021", restored.portRange)
-        assertEquals(MieruBean.PROTOCOL_UDP, restored.protocol)
-        assertEquals("4012-4021", cloned.portRange)
-        assertEquals(4012, cloned.serverPort)
+        for (protocol in protocols) {
+            val source = MieruBean().apply {
+                serverAddress = "example.com"
+                serverPort = 4012
+                portRange = "4012-4021"
+                this.protocol = protocol
+                username = "user"
+                password = "pass"
+                mtu = 1380
+            }
+
+            val restored = BeanConverters.deserialize(
+                MieruBean(),
+                BeanConverters.serialize(source),
+            )
+            val cloned = source.clone()
+
+            assertEquals(4012, restored.serverPort, protocol)
+            assertEquals("4012-4021", restored.portRange, protocol)
+            assertEquals(protocol, restored.protocol, protocol)
+            assertEquals("4012-4021", cloned.portRange, protocol)
+            assertEquals(protocol, cloned.protocol, protocol)
+            if (MieruBean.usesUdp(protocol)) {
+                assertEquals(1380, restored.mtu, protocol)
+                assertEquals(1380, cloned.mtu, protocol)
+            }
+        }
+    }
+
+    @Test
+    fun `TCP ping capability follows transport mode`() {
+        val bean = MieruBean()
+
+        bean.protocol = MieruBean.PROTOCOL_TCP
+        assertEquals(true, bean.canTCPing)
+
+        bean.protocol = MieruBean.PROTOCOL_UDP
+        assertEquals(false, bean.canTCPing)
+
+        bean.protocol = MieruBean.PROTOCOL_TCP_UDP
+        assertEquals(true, bean.canTCPing)
     }
 }

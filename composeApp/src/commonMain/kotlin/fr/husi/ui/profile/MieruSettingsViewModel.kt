@@ -16,7 +16,7 @@ internal data class MieruUiState(
     val name: String = "",
     val address: String = "127.0.0.1",
     val port: String = "443",
-    val protocol: String = "TCP",
+    val protocol: String = MieruBean.PROTOCOL_TCP,
     val username: String = "",
     val password: String = "",
     val mtu: Int = 1400,
