@@ -18,6 +18,26 @@ class MieruFmtTest {
     private fun Map<String, Any?>.firstProfile(): Map<String, Any?> =
         this["profiles"].asJsonList().first().asJsonMap()
 
+    private fun MieruBean.portBindings(): List<Map<String, Any?>> {
+        val config = buildMieruConfig(port = 2080, logLevel = 0).toJsonMapKxs()
+        return config.firstProfile()["servers"].asJsonList().first().asJsonMap()["portBindings"]
+            .asJsonList().map { it.asJsonMap() }
+    }
+
+    @Test
+    fun `displayAddress should preserve single port and port range`() {
+        val bean = MieruBean().apply {
+            serverAddress = "2.27.202.65"
+            serverPort = 4012
+        }
+
+        assertEquals("2.27.202.65:4012", bean.displayAddress())
+
+        bean.portRange = "4012-4021"
+
+        assertEquals("2.27.202.65:4012-4021", bean.displayAddress())
+    }
+
     @Test
     fun `parseMieru should parse url with all fields`() {
         val bean = parseMieru(FmtTestConstant.MIERU_URL)
@@ -168,6 +188,71 @@ class MieruFmtTest {
     }
 
     @Test
+    fun `buildMieruConfig should emit TCP portRange without port`() {
+        val bean = MieruBean().apply {
+            serverAddress = "example.com"
+            serverPort = 4012
+            portRange = "4012-4021"
+            username = "user"
+            password = "secret"
+            protocol = MieruBean.PROTOCOL_TCP
+        }
+        bean.initializeDefaultValues()
+
+        val bindings = bean.portBindings()
+
+        assertEquals(1, bindings.size)
+        assertEquals("TCP", bindings[0]["protocol"])
+        assertEquals("4012-4021", bindings[0]["portRange"])
+        assertFalse(bindings[0].containsKey("port"))
+    }
+
+    @Test
+    fun `buildMieruConfig should emit TCP and UDP bindings for range`() {
+        val bean = MieruBean().apply {
+            serverAddress = "2.27.202.65"
+            serverPort = 4012
+            portRange = "4012-4021"
+            username = "user"
+            password = "secret"
+            protocol = MieruBean.PROTOCOL_TCP_UDP
+        }
+        bean.initializeDefaultValues()
+
+        val bindings = bean.portBindings()
+
+        assertEquals(2, bindings.size)
+        assertEquals("TCP", bindings[0]["protocol"])
+        assertEquals("4012-4021", bindings[0]["portRange"])
+        assertFalse(bindings[0].containsKey("port"))
+        assertEquals("UDP", bindings[1]["protocol"])
+        assertEquals("4012-4021", bindings[1]["portRange"])
+        assertFalse(bindings[1].containsKey("port"))
+    }
+
+    @Test
+    fun `buildMieruConfig should emit TCP and UDP bindings for single port`() {
+        val bean = MieruBean().apply {
+            serverAddress = "2.27.202.65"
+            serverPort = 4012
+            username = "user"
+            password = "secret"
+            protocol = MieruBean.PROTOCOL_TCP_UDP
+        }
+        bean.initializeDefaultValues()
+
+        val bindings = bean.portBindings()
+
+        assertEquals(2, bindings.size)
+        assertEquals("TCP", bindings[0]["protocol"])
+        assertEquals(4012, assertIs<Number>(bindings[0]["port"]).toInt())
+        assertFalse(bindings[0].containsKey("portRange"))
+        assertEquals("UDP", bindings[1]["protocol"])
+        assertEquals(4012, assertIs<Number>(bindings[1]["port"]).toInt())
+        assertFalse(bindings[1].containsKey("portRange"))
+    }
+
+    @Test
     fun `upstream mierus URI preserves single TCP port`() {
         val source = MieruBean().apply {
             serverAddress = "example.com"
@@ -206,6 +291,28 @@ class MieruFmtTest {
         assertEquals(4012, parsed.serverPort)
         assertEquals("4012-4021", parsed.portRange)
         assertEquals(MieruBean.PROTOCOL_UDP, parsed.protocol)
+    }
+
+    @Test
+    fun `upstream mierus URI preserves TCP and UDP port range`() {
+        val source = MieruBean().apply {
+            serverAddress = "example.com"
+            serverPort = 4012
+            portRange = "4012-4021"
+            username = "user"
+            password = "pass"
+            protocol = MieruBean.PROTOCOL_TCP_UDP
+        }
+
+        val uri = source.toUri()
+        val parsed = parseMieru(uri)
+
+        assertEquals(2, Regex("port=4012-4021").findAll(uri).count())
+        assertTrue(uri.contains("protocol=TCP"))
+        assertTrue(uri.contains("protocol=UDP"))
+        assertEquals(4012, parsed.serverPort)
+        assertEquals("4012-4021", parsed.portRange)
+        assertEquals(MieruBean.PROTOCOL_TCP_UDP, parsed.protocol)
     }
 
     @Test
