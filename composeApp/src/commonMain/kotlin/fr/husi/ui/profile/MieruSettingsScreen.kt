@@ -77,7 +77,11 @@ private fun LazyListScope.mieruSettings(
     uiState: MieruUiState,
     viewModel: MieruSettingsViewModel,
 ) {
-    val protocols = listOf("TCP", "UDP")
+    val protocols = listOf(
+        MieruBean.PROTOCOL_TCP,
+        MieruBean.PROTOCOL_UDP,
+        MieruBean.PROTOCOL_TCP_UDP,
+    )
 
     preferenceGroup {
         TextFieldPreference(
@@ -172,7 +176,7 @@ private fun LazyListScope.mieruSettings(
                 )
             },
         )
-        if (uiState.protocol == MieruBean.PROTOCOL_UDP) {
+        if (MieruBean.usesUdp(uiState.protocol)) {
             TextFieldPreference(
                 value = uiState.mtu,
                 onValueChange = { viewModel.setMtu(it) },
