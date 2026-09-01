@@ -5,6 +5,7 @@ import fr.husi.fmt.AbstractBean
 import fr.husi.fmt.BeanConverters
 import fr.husi.io.BinaryInput
 import fr.husi.io.BinaryOutput
+import fr.husi.ktx.wrapIPV6Host
 import kotlinx.serialization.Transient
 
 @KxsSerializable
@@ -15,6 +16,13 @@ class MieruBean : AbstractBean() {
 
         const val PROTOCOL_TCP = "TCP"
         const val PROTOCOL_UDP = "UDP"
+        const val PROTOCOL_TCP_UDP = "TCP+UDP"
+
+        fun usesTcp(protocol: String): Boolean =
+            protocol == PROTOCOL_TCP || protocol == PROTOCOL_TCP_UDP
+
+        fun usesUdp(protocol: String): Boolean =
+            protocol == PROTOCOL_UDP || protocol == PROTOCOL_TCP_UDP
 
         @JvmField
         val CREATOR = object : CREATOR<MieruBean>() {
@@ -58,7 +66,7 @@ class MieruBean : AbstractBean() {
         output.writeString(protocol)
         output.writeString(username)
         output.writeString(password)
-        if (protocol == PROTOCOL_UDP) {
+        if (usesUdp(protocol)) {
             output.writeInt(mtu)
         }
         output.writeString(trafficPattern)
@@ -74,7 +82,7 @@ class MieruBean : AbstractBean() {
         protocol = input.readString().uppercase()
         username = input.readString()
         password = input.readString()
-        if (protocol == PROTOCOL_UDP) {
+        if (usesUdp(protocol)) {
             mtu = input.readInt()
         }
         if (version >= 2) {
@@ -85,7 +93,12 @@ class MieruBean : AbstractBean() {
         }
     }
 
-    override val canTCPing get() = protocol == PROTOCOL_TCP
+    override fun displayAddress(): String {
+        val port = portRange.ifBlank { serverPort.toString() }
+        return "${serverAddress.wrapIPV6Host()}:$port"
+    }
+
+    override val canTCPing get() = usesTcp(protocol)
 
     override fun clone(): MieruBean {
         return BeanConverters.deserialize(MieruBean(), BeanConverters.serialize(this))

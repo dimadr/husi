@@ -23,20 +23,12 @@ import fr.husi.ktx.isIpAddress
 import fr.husi.ktx.queryParameterNotBlank
 import fr.husi.ktx.toJsonMapKxs
 import fr.husi.ktx.toJsonStringKxs
+import fr.husi.ktx.unUrlSafe
 import fr.husi.libcore.Libcore
 import fr.husi.logLevelString
 
 fun MieruBean.buildMieruConfig(port: Int, logLevel: Int): String {
     val remotePort = parseMieruPort(portRange.ifBlank { finalPort.toString() })
-    val portBinding = mutableMapOf<String, Any>(
-        "protocol" to protocol.uppercase(),
-    ).apply {
-        if (remotePort.isRange) {
-            put("portRange", remotePort.toString())
-        } else {
-            put("port", remotePort.start)
-        }
-    }
     val profile = mutableMapOf(
         "profileName" to "default",
         "user" to mapOf(
@@ -47,9 +39,7 @@ fun MieruBean.buildMieruConfig(port: Int, logLevel: Int): String {
         ),
         "servers" to listOf(
             mutableMapOf<String, Any>(
-                "portBindings" to listOf(
-                    portBinding,
-                ),
+                "portBindings" to buildMieruPortBindings(remotePort),
             ).also {
                 // mieru refuses to parse a domain name in the ipAddress field.
                 if (finalAddress.isIpAddress()) {
@@ -93,14 +83,27 @@ fun parseMieru(link: String): MieruBean = MieruBean().apply {
     username = url.username
     password = url.password
     serverAddress = url.host
+    val repeatedPorts = link.queryParameterValues("port")
+    val normalizedRepeatedPorts = repeatedPorts.mapNotNull(::normalizeMieruPort)
+    val repeatedProtocols = link.queryParameterValues("protocol").map(String::uppercase)
     val remotePort = parseMieruPort(
-        url.queryParameterNotBlank("port") ?: url.ports.ifBlank { defaultPort.toString() },
+        repeatedPorts.firstOrNull() ?: url.ports.ifBlank { defaultPort.toString() },
     )
     serverPort = remotePort.start
     portRange = remotePort.toString().takeIf { remotePort.isRange }.orEmpty()
-    protocol = url.queryParameterNotBlank("protocol")?.uppercase()?.takeIf {
-        it == MieruBean.PROTOCOL_TCP || it == MieruBean.PROTOCOL_UDP
-    } ?: MieruBean.PROTOCOL_TCP
+    protocol = if (
+        repeatedPorts.size == 2 &&
+        normalizedRepeatedPorts.size == 2 &&
+        normalizedRepeatedPorts.distinct().size == 1 &&
+        repeatedProtocols.size == 2 &&
+        repeatedProtocols.toSet() == setOf(MieruBean.PROTOCOL_TCP, MieruBean.PROTOCOL_UDP)
+    ) {
+        MieruBean.PROTOCOL_TCP_UDP
+    } else {
+        repeatedProtocols.firstOrNull()?.takeIf {
+            it == MieruBean.PROTOCOL_TCP || it == MieruBean.PROTOCOL_UDP
+        } ?: MieruBean.PROTOCOL_TCP
+    }
 
     name = url.queryParameter("profile")
     mtu = url.queryParameterNotBlank("mtu")?.toIntOrNull() ?: 0
@@ -114,8 +117,16 @@ fun MieruBean.toUri(): String = Libcore.newURL("mierus").apply {
     username = this@toUri.username
     password = this@toUri.password
     host = serverAddress
-    addQueryParameter("port", portRange.ifBlank { serverPort.toString() })
-    addQueryParameter("protocol", protocol.uppercase())
+    val remotePort = portRange.ifBlank { serverPort.toString() }
+    if (protocol == MieruBean.PROTOCOL_TCP_UDP) {
+        addQueryParameter("port", remotePort)
+        addQueryParameter("port", remotePort)
+        addQueryParameter("protocol", MieruBean.PROTOCOL_TCP)
+        addQueryParameter("protocol", MieruBean.PROTOCOL_UDP)
+    } else {
+        addQueryParameter("port", remotePort)
+        addQueryParameter("protocol", protocol.uppercase())
+    }
 
     addQueryParameter("profile", name.ifBlank { "default" })
     mtu.takeIf { it > 0 }?.let {
@@ -133,6 +144,33 @@ fun MieruBean.toUri(): String = Libcore.newURL("mierus").apply {
         addQueryParameter("traffic-pattern", base64TrafficPattern)
     }
 }.string
+
+private fun MieruBean.buildMieruPortBindings(remotePort: MieruPort): List<Map<String, Any>> {
+    val protocols = if (protocol == MieruBean.PROTOCOL_TCP_UDP) {
+        listOf(MieruBean.PROTOCOL_TCP, MieruBean.PROTOCOL_UDP)
+    } else {
+        listOf(protocol.uppercase())
+    }
+    return protocols.map { bindingProtocol ->
+        mutableMapOf<String, Any>("protocol" to bindingProtocol).apply {
+            if (remotePort.isRange) {
+                put("portRange", remotePort.toString())
+            } else {
+                put("port", remotePort.start)
+            }
+        }
+    }
+}
+
+private fun String.queryParameterValues(key: String): List<String> {
+    val rawQuery = substringAfter('?', "").substringBefore('#')
+    if (rawQuery.isEmpty()) return emptyList()
+    return rawQuery.split('&').mapNotNull { parameter ->
+        val encodedName = parameter.substringBefore('=')
+        if (encodedName.unUrlSafe() != key) return@mapNotNull null
+        parameter.substringAfter('=', "").unUrlSafe().takeIf(String::isNotBlank)
+    }
+}
 
 private fun parseMieruMux(link: String): Int? = when (link) {
     "MULTIPLEXING_OFF" -> 0
