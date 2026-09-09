@@ -40,9 +40,30 @@ jobs:
           build-cache-name: android-mieru-integrated
       - name: Verify Mieru source version
         run: |
-          test "$(git -C plugin/mieru/src/main/go/mieru rev-parse HEAD)" = "155ebbd60f86e472586a60d7ffe58ec8f8682cb1"
-          grep -Fx 'MIERU_VERSION_NAME=3.36.0-0' husi.properties
-          grep -Fx 'MIERU_VERSION=45' husi.properties
+          git fetch --no-tags --depth=1 origin dev
+          dev_sha="$(git rev-parse FETCH_HEAD)"
+          git diff --quiet "$dev_sha" -- husi.properties
+          source husi.properties
+          [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
+          [[ "$MIERU_VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]
+          [[ "$MIERU_VERSION" =~ ^[0-9]+$ ]]
+          expected_sha="$(git ls-tree --format='%(objectname)' "$dev_sha" plugin/mieru/src/main/go/mieru)"
+          feature_sha="$(git ls-tree --format='%(objectname)' HEAD plugin/mieru/src/main/go/mieru)"
+          actual_sha="$(git -C plugin/mieru/src/main/go/mieru rev-parse HEAD)"
+          test "$feature_sha" = "$expected_sha"
+          test "$actual_sha" = "$expected_sha"
+          mieru_source_version="${MIERU_VERSION_NAME%-*}"
+          git -C plugin/mieru/src/main/go/mieru fetch --depth=1 origin \
+            "refs/tags/v${mieru_source_version}:refs/tags/v${mieru_source_version}"
+          test "$(git -C plugin/mieru/src/main/go/mieru describe --tags --exact-match)" = "v${mieru_source_version}"
+          {
+            echo "HUSI_DEV_SHA=$dev_sha"
+            echo "HUSI_VERSION_NAME=$VERSION_NAME"
+            echo "HUSI_VERSION_CODE=$VERSION_CODE"
+            echo "MIERU_SOURCE_VERSION=$mieru_source_version"
+            echo "MIERU_SUBMODULE_SHA=$actual_sha"
+          } >> "$GITHUB_ENV"
       - name: Cache route assets
         id: cache-assets
         uses: actions/cache@v6
@@ -71,9 +92,9 @@ jobs:
           unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libmieru.so'
           ! unzip -Z1 "$apk" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
           mkdir -p artifact
-          cp "$apk" artifact/husi-mieru-3.36.0-arm64-v8a-debug.apk
+          cp "$apk" "artifact/husi-${HUSI_VERSION_NAME}-mieru-${MIERU_SOURCE_VERSION}-arm64-v8a-debug.apk"
       - uses: actions/upload-artifact@v7
         with:
           name: husi-mieru-integrated-arm64
-          path: artifact/husi-mieru-3.36.0-arm64-v8a-debug.apk
+          path: artifact/husi-${{ env.HUSI_VERSION_NAME }}-mieru-${{ env.MIERU_SOURCE_VERSION }}-arm64-v8a-debug.apk
           if-no-files-found: error

@@ -25,6 +25,38 @@ class MieruFmtTest {
     }
 
     @Test
+    fun `combined transport runtime retains MTU multiplexing and self protection`() {
+        val bean = MieruBean().apply {
+            serverAddress = "example.com"
+            serverPort = 4012
+            portRange = "4012-4021"
+            protocol = MieruBean.PROTOCOL_TCP_UDP
+            username = "test-user"
+            password = "test-password"
+            mtu = 1400
+            serverMuxNumber = 3
+            initializeDefaultValues()
+        }
+
+        val runtime = bean.buildMieruConfig(port = 2080, logLevel = 0)
+        val profile = runtime.toJsonMapKxs().firstProfile()
+        val server = profile["servers"].asJsonList().single().asJsonMap()
+        assertEquals("example.com", server["domainName"])
+        assertEquals(
+            listOf(
+                mapOf("protocol" to "TCP", "portRange" to "4012-4021"),
+                mapOf("protocol" to "UDP", "portRange" to "4012-4021"),
+            ),
+            server["portBindings"],
+        )
+        assertEquals(1400, assertIs<Number>(profile["mtu"]).toInt())
+        assertEquals("MULTIPLEXING_HIGH", profile["multiplexing"].asJsonMap()["level"])
+        assertEquals("example.com:4012-4021", bean.displayAddress())
+        assertTrue(bean.canSelfProtect)
+        println("Mieru runtime acceptance: $runtime")
+    }
+
+    @Test
     fun `displayAddress should preserve single port and port range`() {
         val bean = MieruBean().apply {
             serverAddress = "2.27.202.65"
