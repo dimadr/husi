@@ -23,11 +23,7 @@ import fr.husi.ktx.isIpAddress
 import fr.husi.ktx.queryParameterNotBlank
 import fr.husi.ktx.kxs
 import fr.husi.ktx.toJsonStringKxs
-<<<<<<< HEAD
-=======
 import fr.husi.ktx.unUrlSafe
-import fr.husi.libcore.Libcore
->>>>>>> b13acf18 (feat(mieru): support TCP+UDP profiles)
 import fr.husi.logLevelString
 import io.github.xchacha20_poly1305.kpuri.Url
 import io.github.xchacha20_poly1305.kpuri.buildUrl
