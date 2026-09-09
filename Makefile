@@ -146,7 +146,7 @@ apk_debug:
 	BUILD_PLUGIN=none ./gradlew androidApp:assembleFossDebug
 
 apk_mieru_debug:
-	HUSI_ABI=arm64-v8a BUILD_PLUGIN=none ./gradlew androidApp:assembleFossDebug
+	HUSI_ABI=arm64-v8a HUSI_APPLICATION_ID=fr.husi.mieru BUILD_PLUGIN=none ./gradlew androidApp:assembleFossDebug
 
 apk_mieru_release:
 	HUSI_ABI=arm64-v8a HUSI_APPLICATION_ID=fr.husi.mieru BUILD_PLUGIN=none ./gradlew androidApp:assembleFossRelease

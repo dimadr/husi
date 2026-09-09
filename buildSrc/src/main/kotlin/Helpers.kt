@@ -233,7 +233,11 @@ fun Project.setupAppCommon() {
         buildTypes {
             val key = signingConfigs.findByName("release")
             if (key != null) {
-                getByName("release").signingConfig = key
+                if (requireTargetAbi().isBlank() ||
+                    providers.environmentVariable("HUSI_APPLICATION_ID").orNull == "fr.husi.mieru"
+                ) {
+                    getByName("release").signingConfig = key
+                }
                 getByName("debug").signingConfig = key
             }
         }
@@ -297,6 +301,13 @@ fun Project.setupApp() {
         }
     }
 
+    if (pkgName != "fr.husi.mieru") {
+        androidApp.packaging.jniLibs.excludes.add("**/libmieru.so")
+        return
+    }
+    require(requireTargetAbi() == "arm64-v8a") {
+        "The integrated Mieru APK requires HUSI_ABI=arm64-v8a."
+    }
     val embeddedMieru = tasks.register<Exec>("buildEmbeddedMieruArm64") {
         val runScript = rootProject.file("run")
         if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
@@ -319,7 +330,11 @@ fun Project.setupApp() {
             },
             rootProject.file("buildScript/app/mieru.sh"),
             rootProject.file("buildScript/plugin/common.sh"),
+            rootProject.file("buildScript/init/env.sh"),
+            rootProject.file("buildScript/init/env_ndk.sh"),
+            rootProject.file("buildScript/init/version.sh"),
         )
+        inputs.property("mieruSourceRevision", requireMetadata("MIERU_VERSION_NAME"))
         outputs.file(rootProject.file("composeApp/executableSo/arm64-v8a/libmieru.so"))
     }
     tasks.configureEach {

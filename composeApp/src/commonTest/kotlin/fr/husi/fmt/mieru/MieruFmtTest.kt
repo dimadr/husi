@@ -25,6 +25,38 @@ class MieruFmtTest {
     }
 
     @Test
+    fun `combined transport runtime retains MTU multiplexing and self protection`() {
+        val bean = MieruBean().apply {
+            serverAddress = "example.com"
+            serverPort = 4012
+            portRange = "4012-4021"
+            protocol = MieruBean.PROTOCOL_TCP_UDP
+            username = "test-user"
+            password = "test-password"
+            mtu = 1400
+            serverMuxNumber = 3
+            initializeDefaultValues()
+        }
+
+        val runtime = bean.buildMieruConfig(port = 2080, logLevel = 0)
+        val profile = runtime.toJsonMapKxs().firstProfile()
+        val server = profile["servers"].asJsonList().single().asJsonMap()
+        assertEquals("example.com", server["domainName"])
+        assertEquals(
+            listOf(
+                mapOf("protocol" to "TCP", "portRange" to "4012-4021"),
+                mapOf("protocol" to "UDP", "portRange" to "4012-4021"),
+            ),
+            server["portBindings"],
+        )
+        assertEquals(1400, assertIs<Number>(profile["mtu"]).toInt())
+        assertEquals("MULTIPLEXING_HIGH", profile["multiplexing"].asJsonMap()["level"])
+        assertEquals("example.com:4012-4021", bean.displayAddress())
+        assertTrue(bean.canSelfProtect)
+        println("Mieru runtime acceptance: $runtime")
+    }
+
+    @Test
     fun `displayAddress should preserve single port and port range`() {
         val bean = MieruBean().apply {
             serverAddress = "2.27.202.65"
@@ -93,7 +125,7 @@ class MieruFmtTest {
     }
 
     @Test
-    fun `toUri should omit empty optional query fields and provide upstream profile`() {
+    fun `toUri should omit empty optional query fields`() {
         val source = MieruBean().apply {
             serverAddress = "example.com"
             serverPort = 8080
@@ -106,7 +138,7 @@ class MieruFmtTest {
         val uri = source.toUri()
         val parsed = parseMieru(uri)
 
-        assertTrue(uri.contains("profile=default"))
+        assertFalse(uri.contains("profile="))
         assertFalse(uri.contains("mtu="))
         assertFalse(uri.contains("multiplexing="))
         assertEquals(0, parsed.mtu)
@@ -265,7 +297,7 @@ class MieruFmtTest {
         val uri = source.toUri()
         val parsed = parseMieru(uri)
 
-        assertTrue(uri.contains("port=4012"))
+        assertTrue(uri.contains("example.com:4012"))
         assertTrue(uri.contains("protocol=TCP"))
         assertEquals(4012, parsed.serverPort)
         assertEquals("", parsed.portRange)
@@ -313,6 +345,38 @@ class MieruFmtTest {
         assertEquals(4012, parsed.serverPort)
         assertEquals("4012-4021", parsed.portRange)
         assertEquals(MieruBean.PROTOCOL_TCP_UDP, parsed.protocol)
+    }
+
+    @Test
+    fun `kpuri import export preserves all transports with single ports and ranges`() {
+        for (mode in listOf(MieruBean.PROTOCOL_TCP, MieruBean.PROTOCOL_UDP, MieruBean.PROTOCOL_TCP_UDP)) {
+            for (range in listOf("", "4012-4021")) {
+                val source = MieruBean().apply {
+                    serverAddress = "2001:db8::1"
+                    serverPort = 4012
+                    portRange = range
+                    protocol = mode
+                    username = "user +&"
+                    password = "pass @?#"
+                    name = "profile +&"
+                    mtu = 1380
+                    serverMuxNumber = 3
+                    trafficPattern = FmtTestConstant.MIERU_TRAFFIC_PATTERN_BASE64
+                }
+                val restored = parseMieru(source.toUri())
+                assertEquals(source.serverAddress, restored.serverAddress)
+                assertEquals(source.serverPort, restored.serverPort)
+                assertEquals(source.portRange, restored.portRange)
+                assertEquals(source.protocol, restored.protocol)
+                assertEquals(source.username, restored.username)
+                assertEquals(source.password, restored.password)
+                assertEquals(source.name, restored.name)
+                assertEquals(source.mtu, restored.mtu)
+                assertEquals(source.serverMuxNumber, restored.serverMuxNumber)
+                assertEquals(source.trafficPattern, restored.trafficPattern)
+                assertEquals("[2001:db8::1]:${range.ifBlank { "4012" }}", restored.displayAddress())
+            }
+        }
     }
 
     @Test
