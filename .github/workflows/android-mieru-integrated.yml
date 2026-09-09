@@ -40,9 +40,9 @@ jobs:
           build-cache-name: android-mieru-integrated
       - name: Verify Mieru source version
         run: |
-          test "$(git -C plugin/mieru/src/main/go/mieru rev-parse HEAD)" = "155ebbd60f86e472586a60d7ffe58ec8f8682cb1"
-          grep -Fx 'MIERU_VERSION_NAME=3.36.0-0' husi.properties
-          grep -Fx 'MIERU_VERSION=45' husi.properties
+          test "$(git -C plugin/mieru/src/main/go/mieru rev-parse HEAD)" = "316cc6606c287d45a321b99ac86a1f2e7f2b785a"
+          grep -Fx 'MIERU_VERSION_NAME=3.36.1-0' husi.properties
+          grep -Fx 'MIERU_VERSION=46' husi.properties
       - name: Cache route assets
         id: cache-assets
         uses: actions/cache@v6
@@ -71,9 +71,9 @@ jobs:
           unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libmieru.so'
           ! unzip -Z1 "$apk" | grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/'
           mkdir -p artifact
-          cp "$apk" artifact/husi-mieru-3.36.0-arm64-v8a-debug.apk
+          cp "$apk" artifact/husi-mieru-3.36.1-arm64-v8a-debug.apk
       - uses: actions/upload-artifact@v7
         with:
           name: husi-mieru-integrated-arm64
-          path: artifact/husi-mieru-3.36.0-arm64-v8a-debug.apk
+          path: artifact/husi-mieru-3.36.1-arm64-v8a-debug.apk
           if-no-files-found: error
