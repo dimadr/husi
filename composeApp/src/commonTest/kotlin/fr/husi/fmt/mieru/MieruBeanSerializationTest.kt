@@ -1,6 +1,7 @@
 package fr.husi.fmt.mieru
 
 import fr.husi.fmt.BeanConverters
+import fr.husi.platform.PlatformInfo
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -74,5 +75,35 @@ class MieruBeanSerializationTest {
 
         bean.protocol = MieruBean.PROTOCOL_TCP_UDP
         assertEquals(true, bean.canTCPing)
+    }
+
+    @Test
+    fun `single port profiles preserve transport and UDP MTU on reload`() {
+        for (mode in listOf(MieruBean.PROTOCOL_TCP, MieruBean.PROTOCOL_UDP, MieruBean.PROTOCOL_TCP_UDP)) {
+            val source = MieruBean().also {
+                it.serverAddress = "example.com"
+                it.serverPort = 4012
+                it.protocol = mode
+                it.mtu = 1380
+            }
+            val bytes = BeanConverters.serialize(source)
+            val restored = BeanConverters.deserialize(MieruBean(), bytes)
+            assertContentEquals(bytes, BeanConverters.serialize(restored))
+            assertEquals(mode, restored.protocol)
+            assertEquals(mode, restored.clone().protocol)
+            assertEquals("", restored.portRange)
+            assertEquals("example.com:4012", restored.displayAddress())
+            assertEquals(PlatformInfo.isAndroid, restored.canSelfProtect)
+            if (MieruBean.usesUdp(mode)) assertEquals(1380, restored.clone().mtu)
+        }
+    }
+
+    @Test
+    fun `self protection follows Android platform for every transport`() {
+        for (mode in listOf(MieruBean.PROTOCOL_TCP, MieruBean.PROTOCOL_UDP, MieruBean.PROTOCOL_TCP_UDP)) {
+            val bean = MieruBean().apply { protocol = mode }
+            assertEquals(PlatformInfo.isAndroid, bean.canSelfProtect, mode)
+            assertEquals(PlatformInfo.isAndroid, bean.clone().canSelfProtect, mode)
+        }
     }
 }
