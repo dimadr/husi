@@ -183,8 +183,39 @@ fun Project.setupAppCommon() {
         ?.let(rootProject::file)
         ?: rootProject.file("release.keystore")
 
+    val unsignedMieruCi = providers.environmentVariable("HUSI_UNSIGNED_MIERU_CI").orNull == "true"
+    if (unsignedMieruCi) {
+        check(providers.environmentVariable("GITHUB_ACTIONS").orNull == "true" &&
+                providers.environmentVariable("CI").orNull == "true") {
+            "Unsigned Mieru Release is restricted to GitHub Actions CI."
+        }
+        check(path == ":androidApp" &&
+                gradle.startParameter.taskNames.map { it.removePrefix(":") } ==
+                listOf("androidApp:assembleFossRelease")) {
+            "Unsigned Mieru CI requires only androidApp:assembleFossRelease."
+        }
+        check(androidApp.defaultConfig.applicationId == "fr.husi.mieru" &&
+                requireTargetAbi() == "arm64-v8a") {
+            "Unsigned Mieru CI requires fr.husi.mieru and arm64-v8a."
+        }
+        check(keystorePwd == null && alias == null && pwd == null &&
+                listOf("HUSI_KEYSTORE_FILE", "KEYSTORE_PASS", "ALIAS_NAME", "ALIAS_PASS").none {
+                    providers.environmentVariable(it).isPresent
+                }) {
+            "Unsigned Mieru CI must not receive signing credentials or a keystore override."
+        }
+        with(androidApp.buildTypes.getByName("release")) {
+            check(isMinifyEnabled && isShrinkResources && !isDebuggable) {
+                "Unsigned Mieru CI requires an optimized, non-debuggable Release variant."
+            }
+        }
+        logger.lifecycle("Unsigned Mieru CI Release: no signing identity; R8 and resource shrinking retained.")
+    }
+
     androidApp.apply {
-        if (keystorePwd != null) {
+        if (unsignedMieruCi) {
+            buildTypes.getByName("release").signingConfig = null
+        } else if (keystorePwd != null) {
             if (alias == null || pwd == null) {
                 error(
                     "KEYSTORE_PASS is set but " +
@@ -232,7 +263,9 @@ fun Project.setupAppCommon() {
         }
         buildTypes {
             val key = signingConfigs.findByName("release")
-            if (key != null) {
+            if (unsignedMieruCi) {
+                check(key == null) { "Unsigned Mieru CI must not configure a release signing identity." }
+            } else if (key != null) {
                 if (requireTargetAbi().isBlank() ||
                     providers.environmentVariable("HUSI_APPLICATION_ID").orNull == "fr.husi.mieru"
                 ) {
