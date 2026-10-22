@@ -1,6 +1,9 @@
 name: Android Mieru Integrated
 
 on:
+  push:
+    branches:
+      - feature/mieru-builtin
   workflow_dispatch:
 
 permissions:
