@@ -16,6 +16,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      LOCAL_RELEASE_SIZE: '41462619'
     steps:
       - name: Checkout source code
         uses: actions/checkout@v7
@@ -70,28 +72,92 @@ jobs:
         run: make assets
       - name: Build Android libcore
         run: make libcore_android
-      - name: Build ARM64 debug APK with embedded Mieru
-        run: make apk_mieru_debug
-      - name: Verify and stage the single APK
-        id: apk
+      - name: Build optimized unsigned ARM64 Release APK with embedded Mieru
+        id: release
         run: |
-          mapfile -t apks < <(find androidApp/build/outputs/apk/foss/debug -type f -name '*.apk')
+          set -euo pipefail
+          make apk_mieru_release_unsigned_ci 2>&1 | tee "$RUNNER_TEMP/mieru-release-build.log"
+          for task in minifyFossReleaseWithR8 optimizeFossReleaseResources; do
+            grep -Ex "> Task :androidApp:$task( (FROM-CACHE|UP-TO-DATE))?" "$RUNNER_TEMP/mieru-release-build.log"
+          done
+          test -s androidApp/build/outputs/mapping/fossRelease/mapping.txt
+      - name: Verify and stage the single unsigned Release APK
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find androidApp/build/outputs/apk/foss/release -type f -name '*.apk')
           test "${#apks[@]}" -eq 1
           apk="${apks[0]}"
           printf 'APK: %s\n' "$apk"
           [[ "$apk" == *arm64-v8a*.apk ]]
+          mkdir -p artifact
           aapt2="$(find "${ANDROID_HOME:?}/build-tools" -mindepth 2 -maxdepth 2 -type f -name aapt2 | sort -V | tail -n 1)"
           test -x "$aapt2"
-          badging="$("$aapt2" dump badging "$apk")"
-          printf '%s\n' "$badging"
-          grep -Fq "package: name='fr.husi.mieru.debug' versionCode='${HUSI_VERSION_CODE}' versionName='${HUSI_VERSION_NAME}'" <<< "$badging"
-          grep -Fxq "native-code: 'arm64-v8a'" <<< "$badging"
-          unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libmieru.so'
-          ! unzip -Z1 "$apk" | grep -E '^lib/' | grep -Ev '^lib/arm64-v8a/'
-          mkdir -p artifact
-          cp "$apk" "artifact/husi-${HUSI_VERSION_NAME}-mieru-${MIERU_SOURCE_VERSION}-arm64-v8a-debug.apk"
+          "$aapt2" dump badging "$apk" | tee artifact/badging.txt
+          grep -Fq "package: name='fr.husi.mieru' versionCode='${HUSI_VERSION_CODE}' versionName='${HUSI_VERSION_NAME}'" artifact/badging.txt
+          grep -Fxq "native-code: 'arm64-v8a'" artifact/badging.txt
+          if grep -Fxq 'application-debuggable' artifact/badging.txt; then
+            echo '::error::Release APK is debuggable.'
+            exit 1
+          fi
+          "$aapt2" dump xmltree "$apk" --file AndroidManifest.xml > artifact/manifest.txt
+          python3 - "$apk" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              assert archive.testzip() is None, "ZIP integrity failure"
+              names = archive.namelist()
+              assert len(names) == len(set(names)), "Duplicate ZIP entries"
+              assert names.count("AndroidManifest.xml") == 1, "Missing manifest"
+              assert names.count("lib/arm64-v8a/libmieru.so") == 1, "Missing Mieru"
+              assert all(not n.startswith("lib/") or n.startswith("lib/arm64-v8a/") for n in names), "Unexpected ABI"
+              assert not any(n.upper().startswith("META-INF/") and n.upper().endswith((".SF", ".RSA", ".DSA", ".EC", "MANIFEST.MF")) for n in names), "JAR signing material"
+              with open(sys.argv[1], "rb") as apk_file:
+                  apk_file.seek(archive.start_dir - 16)
+                  assert apk_file.read(16) != b"APK Sig Block 42", "APK signing block present"
+          PY
+          apksigner="$(dirname "$aapt2")/apksigner"
+          if "$apksigner" verify --verbose --print-certs "$apk" > artifact/unsigned-check.txt 2>&1; then
+            echo '::error::Unsigned CI artifact has a valid signature.'
+            exit 1
+          fi
+          cat artifact/unsigned-check.txt
+          grep -Fxq 'DOES NOT VERIFY' artifact/unsigned-check.txt
+          mapfile -t errors < <(grep '^ERROR:' artifact/unsigned-check.txt)
+          test "${#errors[@]}" -eq 1
+          test "${errors[0]}" = 'ERROR: Missing META-INF/MANIFEST.MF'
+          test "$(git -C plugin/mieru/src/main/go/mieru rev-parse HEAD)" = "$MIERU_SUBMODULE_SHA"
+          unzip -p "$apk" lib/arm64-v8a/libmieru.so > "$RUNNER_TEMP/mieru-apk.so"
+          test -s "$RUNNER_TEMP/mieru-apk.so"
+          go version -m "$RUNNER_TEMP/mieru-apk.so" | tee artifact/mieru-build-metadata.txt
+          grep -Fq 'GOARCH=arm64' artifact/mieru-build-metadata.txt
+          grep -Fq 'GOOS=android' artifact/mieru-build-metadata.txt
+          staged="artifact/husi-${HUSI_VERSION_NAME}-mieru-${MIERU_SOURCE_VERSION}-arm64-v8a-unsigned.apk"
+          cp "$apk" "$staged"
+          bytes="$(stat -c %s "$staged")"
+          mib="$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')"
+          apk_sha="$(sha256sum "$staged" | cut -d ' ' -f 1)"
+          mieru_sha="$(sha256sum "$RUNNER_TEMP/mieru-apk.so" | cut -d ' ' -f 1)"
+          difference=$((bytes - LOCAL_RELEASE_SIZE))
+          if [[ "$((difference < 0 ? -difference : difference))" -gt "$((LOCAL_RELEASE_SIZE / 10))" ]]; then
+            echo '::warning::Release size differs by more than 10% from the local reference; investigate the verification report.'
+          fi
+          {
+            printf 'Variant: fossRelease\nPackage: fr.husi.mieru\nVersion: %s / %s\nABI: arm64-v8a\n' "$HUSI_VERSION_NAME" "$HUSI_VERSION_CODE"
+            printf 'APK: %s\nAPK bytes: %s\nAPK MiB: %s\nLocal reference bytes: %s\nDifference bytes: %s\n' "$staged" "$bytes" "$mib" "$LOCAL_RELEASE_SIZE" "$difference"
+            printf 'APK SHA256: %s\nMieru SHA256: %s\nSigning status: UNSIGNED\n' "$apk_sha" "$mieru_sha"
+            printf 'Mieru version: %s\nMieru submodule: %s\nUpstream dev: %s\n' "$MIERU_SOURCE_VERSION" "$MIERU_SUBMODULE_SHA" "$HUSI_DEV_SHA"
+            printf 'R8: minifyFossReleaseWithR8\nResource shrinking: optimizeFossReleaseResources\n'
+          } | tee artifact/verification.txt
+          cat artifact/verification.txt >> "$GITHUB_STEP_SUMMARY"
+          cp "$RUNNER_TEMP/mieru-release-build.log" artifact/
       - uses: actions/upload-artifact@v7
         with:
-          name: husi-mieru-integrated-arm64
-          path: artifact/husi-${{ env.HUSI_VERSION_NAME }}-mieru-${{ env.MIERU_SOURCE_VERSION }}-arm64-v8a-debug.apk
+          name: husi-mieru-unsigned-release-arm64
+          path: artifact/
           if-no-files-found: error
+      - name: Preserve failure build log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: husi-mieru-unsigned-release-failure-log
+          path: ${{ runner.temp }}/mieru-release-build.log
+          if-no-files-found: ignore

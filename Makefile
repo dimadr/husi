@@ -145,6 +145,10 @@ apk_mieru_debug:
 apk_mieru_release:
 	HUSI_ABI=arm64-v8a HUSI_APPLICATION_ID=fr.husi.mieru BUILD_PLUGIN=none ./gradlew androidApp:assembleFossRelease
 
+.PHONY: apk_mieru_release_unsigned_ci
+apk_mieru_release_unsigned_ci:
+	HUSI_UNSIGNED_MIERU_CI=true HUSI_ABI=arm64-v8a HUSI_APPLICATION_ID=fr.husi.mieru BUILD_PLUGIN=none ./gradlew androidApp:assembleFossRelease
+
 assets:
 	./run lib assets
 
