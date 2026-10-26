@@ -1,7 +1,14 @@
 package fr.husi.core
 
+import com.google.protobuf.ByteString
+import fr.husi.fmt.mieru.MieruBean
+import fr.husi.fmt.mieru.buildMieruConfig
 import fr.husi.proto.daemon.SubscribeConnectionsRequest
 import fr.husi.proto.daemon.SubscribeStatusRequest
+import fr.husi.proto.v1.StartServiceRequest
+import fr.husi.proto.v1.pluginFile
+import fr.husi.proto.v1.pluginProcessSpec
+import fr.husi.proto.v1.startServiceRequest
 import io.github.xchacha20_poly1305.kurpc.CallOptions
 import io.github.xchacha20_poly1305.kurpc.ChannelClosedException
 import io.github.xchacha20_poly1305.kurpc.Metadata
@@ -58,6 +65,55 @@ class KurpcCoreClientTest {
         factory.awaitFirst().unaryFailure = TransportException("connection refused")
         val transport = assertFailsWith<CoreRpcException> { client.clearLogs() }
         assertEquals(Status.Code.UNAVAILABLE, transport.code)
+        client.close()
+    }
+
+    @Test
+    fun `typed start service preserves embedded Mieru process and native configuration`() = runTest {
+        val factory = RecordingChannelFactory()
+        val client = newClient(factory)
+        val nativeConfig = MieruBean().apply {
+            serverAddress = "example.com"
+            serverPort = 4012
+            portRange = "4012-4021"
+            protocol = MieruBean.PROTOCOL_TCP_UDP
+            username = "test-user"
+            password = "test-password"
+            mtu = 1400
+            serverMuxNumber = 3
+            initializeDefaultValues()
+        }.buildMieruConfig(port = 2080, logLevel = 0)
+        val configName = "mieru_2080.json"
+        val plugin = pluginProcessSpec {
+            name = "mieru-plugin"
+            command.addAll(listOf("/data/app/fr.husi.mieru/lib/arm64/libmieru.so", "run"))
+            environment.putAll(
+                mapOf(
+                    "MIERU_PROTECT_PATH" to "/data/user/0/fr.husi.mieru/files/protect.sock",
+                    "MIERU_CONFIG_JSON_FILE" to $$"${file:$$configName}",
+                ),
+            )
+            files.add(pluginFile {
+                name = configName
+                content = ByteString.copyFromUtf8(nativeConfig)
+            })
+        }
+        val request = startServiceRequest {
+            config = """{"outbounds":[]}"""
+            plugins.add(plugin)
+        }
+
+        client.startService(request)
+
+        val call = factory.awaitFirst().unaryCalls.single()
+        assertEquals("/husi.v1.DaemonService/StartService", call.method)
+        val sent = StartServiceRequest.parseFrom(call.request)
+        assertEquals(request, sent)
+        val sentPlugin = sent.pluginsList.single()
+        assertEquals(plugin.commandList, sentPlugin.commandList)
+        assertEquals(plugin.environmentMap, sentPlugin.environmentMap)
+        assertEquals(configName, sentPlugin.filesList.single().name)
+        assertEquals(nativeConfig, sentPlugin.filesList.single().content.toStringUtf8())
         client.close()
     }
 
